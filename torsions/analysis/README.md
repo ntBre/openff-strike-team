@@ -6,8 +6,6 @@ with ``python map-parameter-ids-to-torsions.py``.
 
 After that the steps below can be largely conducted independently.
 
-### Generate `parameter_id_to_torsion_ids.json`
-
 ```
 python ../scripts/map-parameter-ids-to-torsions.py  \
     --input     "../datasets/qm/output"             \
