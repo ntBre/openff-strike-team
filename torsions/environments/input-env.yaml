@@ -22,6 +22,10 @@ dependencies:
   # plotting
   - seaborn
 
+  # ui
+  - click
+  - tqdm
+
   - pip:
     # molecule visualization / format conversion
     - cairosvg
