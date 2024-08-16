@@ -123,3 +123,14 @@ python ../scripts/plot-individual-energy-breakdowns.py  \
 ```
 
 Produces, e.g., `../images/tm-2.2/t60g/17291347/individual-energy-breakdowns-mm/images/a10_0-1-3.png` (among many others).
+
+
+### Generate PDBs
+
+```
+python ../scripts/write-trajectory.py           \
+    --torsiondrive-id   119466831               \
+    --dataset           ../datasets/mm/minimized-torsiondrive-datasets  \
+    --coordinate-type   qm          \
+    --output-path       qm-119466831.pdb
+```

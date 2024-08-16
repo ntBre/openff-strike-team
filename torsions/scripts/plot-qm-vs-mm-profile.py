@@ -83,6 +83,9 @@ def plot_mm_vs_qm_profile(
     suffix: str = ""
 ):    
     subset = qm_dataset.filter(pc.field("torsiondrive_id") == torsiondrive_id)
+    if not subset.count_rows():
+        return
+    
     df = subset.to_table().to_pandas()
     columns = ["qcarchive_id", "qm_energy", "mm_energy"]
     if with_rmsds:
@@ -196,6 +199,16 @@ def plot_mm_vs_qm_profile(
     help="The suffix to append to the output file.",
     default=""
 )
+@click.option(
+    "--combination",
+    "combinations",
+    type=str,
+    help=(
+        "Combinations of data sets to plot in CSV format, "
+        "e.g. 'sage-2.2.0.csv' as generated in qca-datasets-report"
+    ),
+    multiple=True
+)
 def plot_all(
     parameter_id: str,
     with_rmsds: bool = False,
@@ -204,7 +217,8 @@ def plot_all(
     mm_dataset_path: str = "datasets/mm/singlepoint-torsiondrive-datasets",
     forcefield: str = "tm-2.2.offxml",
     parameter_ids_to_torsions_path: str = "parameter_id_to_torsion_ids.json",
-    suffix: str = ""
+    suffix: str = "",
+    combinations: list[str] = None,
 ):
     """
     Plot QM vs MM profile with optional RMSDs if using minimized geometries.
@@ -213,9 +227,28 @@ def plot_all(
     output_directory/forcefield/parameter_id/qm-vs-mm/torsion_id.png
     """
     qm_dataset = ds.dataset(qm_dataset_path)
+    print(f"Loaded {qm_dataset.count_rows()} QM records")
     mm_dataset = ds.dataset(mm_dataset_path)
+    print(f"Loaded {mm_dataset.count_rows()} MM records")
     if "forcefield" in mm_dataset.schema.names:
         mm_dataset = mm_dataset.filter(pc.field("forcefield") == forcefield)
+        print(f"Filtered to {mm_dataset.count_rows()} MM records with forcefield {forcefield}")
+
+    if combinations is not None:
+        allowed_torsiondrive_ids = []
+        for combination in combinations:
+            comb_df = pd.read_csv(combination)
+            torsiondrive_ids = comb_df[comb_df.type == "torsiondrive"].id.values
+            allowed_torsiondrive_ids.extend(torsiondrive_ids)
+
+        # remove invalid
+        allowed_torsiondrive_ids = set(allowed_torsiondrive_ids) - {-1}
+        print(f"Found {len(allowed_torsiondrive_ids)} allowed torsiondrive ids")
+        expression = pc.field("torsiondrive_id").isin(allowed_torsiondrive_ids)
+        qm_dataset = qm_dataset.filter(expression)
+        print(f"Filtered to {qm_dataset.count_rows()} QM records with allowed torsiondrive ids")
+        mm_dataset = mm_dataset.filter(expression)
+        print(f"Filtered to {mm_dataset.count_rows()} MM records with allowed torsiondrive ids")
 
     with open(parameter_ids_to_torsions_path, "r") as f:
         parameter_id_to_torsion_ids = json.load(f)
