@@ -1,55 +1,41 @@
 import itertools
-import typing
 import os
 import pathlib
 import tempfile
+import typing
 
 import click
-from openff.toolkit import Molecule, ForceField
-from openff.units import unit
-
+import matplotlib as mpl
+import MDAnalysis as mda
 import numpy as np
 import pandas as pd
-import MDAnalysis as mda
-from matplotlib import pyplot as plt
 import seaborn as sns
-import matplotlib as mpl
-
+from matplotlib import pyplot as plt
+from openff.toolkit import ForceField
+from openff.units import unit
+from rdkit.Chem.Draw import rdMolDraw2D
 
 sns.set_context("talk")
-mpl.rcParams['font.sans-serif'] = ["muli"]
+mpl.rcParams["font.sans-serif"] = ["muli"]
 
 
 def draw_single_indices(mol, indices, width=300, height=300):
-    from rdkit import Chem
-    from rdkit.Chem import Draw
-    from openff.toolkit import Molecule
-    from rdkit.Chem.Draw import rdMolDraw2D
-    from matplotlib import pyplot as plt
-    from cairosvg import svg2png
-    
-
     rdmol = mol.to_rdkit()
     indices = list(map(int, indices))
     for index in indices:
         atom = rdmol.GetAtomWithIdx(int(index))
         atom.SetProp("atomNote", str(index))
-    indices_text = "-".join(list(map(str, indices)))
-    
-    drawer = rdMolDraw2D.MolDraw2DSVG(width, height)
-    options = drawer.drawOptions()
+
+    drawer = rdMolDraw2D.MolDraw2DCairo(width, height)
     # options.baseFontSize = 1
     drawer.DrawMolecule(rdmol, highlightAtoms=tuple(indices))
     drawer.FinishDrawing()
-    svg = drawer.GetDrawingText()
 
     with tempfile.TemporaryDirectory() as tempdir:
-        cwd = os.getcwd()
-        os.chdir(tempdir)
-        svg2png(bytestring=svg, write_to='tmp.png', scale=10)
-        png = plt.imread("tmp.png")
-        os.chdir(cwd)
-    
+        path = os.path.join(tempdir, "tmp.png")
+        drawer.WriteDrawingText(path)
+        png = plt.imread(path)
+
     return png
 
 
@@ -58,12 +44,14 @@ def plot_minimization_energies(
     mol,
     atom_indices: tuple[int, ...] = (4, 2, 7, 0),
     parameter_type: str = "ImproperTorsions",
-    output_directory = "single-molecules",
+    output_directory="single-molecules",
 ):
-    subdf = pd.DataFrame(df[
-        (df.parameter_type == parameter_type)
-        & (df.atom_indices == atom_indices)
-    ])
+    subdf = pd.DataFrame(
+        df[
+            (df.parameter_type == parameter_type)
+            & (df.atom_indices == atom_indices)
+        ]
+    )
 
     # for torsions
     if sum(subdf.value < -150) and sum(subdf.value > 150):
@@ -74,10 +62,10 @@ def plot_minimization_energies(
                 val += 360
             vals.append(val)
         subdf["value"] = vals
-    
+
     color1 = "tab:blue"
     color2 = "tab:red"
-    
+
     fig, (ax1, imgax) = plt.subplots(figsize=(12, 5), ncols=2)
     ax1.set_xlabel("Angle (°)")
 
@@ -96,7 +84,7 @@ def plot_minimization_energies(
     ax1.set_ylabel(ylabel, color=color1)
     ax1.plot(subdf["grid_id"], subdf["value"], color=color1)
     ax1.tick_params(axis="y", labelcolor=color1)
-    
+
     ax2 = ax1.twinx()
     ax2.set_ylabel("Energy [kcal/mol]", color=color2)
     ax2.plot(subdf["grid_id"], subdf["energy"], color=color2)
@@ -107,7 +95,9 @@ def plot_minimization_energies(
     parameter_smirks = subdf.parameter_smirks.values[0]
 
     if parameter_id:
-        ax2.set_title(f"{parameter_type}: {ix} ({parameter_id})\n{parameter_smirks}")
+        ax2.set_title(
+            f"{parameter_type}: {ix} ({parameter_id})\n{parameter_smirks}"
+        )
     else:
         elements = subdf.elements.values[0]
         ax2.set_title(f"{parameter_type}: {ix} ({'-'.join(elements)})")
@@ -120,7 +110,7 @@ def plot_minimization_energies(
     imgax.spines["right"].set_visible(False)
     imgax.spines["top"].set_visible(False)
     imgax.spines["bottom"].set_visible(False)
-    
+
     plt.tight_layout()
 
     output_directory = pathlib.Path(output_directory)
@@ -141,9 +131,6 @@ def plot_minimization_energies(
     plt.close()
 
 
-
-
-
 def calc_bond_energy(length, parameter):
     length = length * unit.angstrom
     return (parameter.k / 2) * ((length - parameter.length) ** 2)
@@ -157,7 +144,9 @@ def calc_angle_energy(angle, parameter):
 def calc_torsion_energy(angle, parameter):
     angle = (angle * unit.degrees).m_as(unit.radians)
     total = 0 * unit.kilojoules_per_mole
-    for k, phase, periodicity in zip(parameter.k, parameter.phase, parameter.periodicity):
+    for k, phase, periodicity in zip(
+        parameter.k, parameter.phase, parameter.periodicity
+    ):
         phase = phase.m_as(unit.radians)
         subtotal = k * (1 + np.cos(periodicity * angle - phase))
         total += subtotal
@@ -227,7 +216,7 @@ def calculate_energy_breakdown(mol, labels):
                 entry[f"atom_{i}"] = index
                 entry[f"element_{i}"] = u.atoms[index].element
             all_entries.append(entry)
-        
+
     parameter_type = "ImproperTorsions"
     for key, parameter in labels["ImproperTorsions"].items():
         key = np.array(list(key))
@@ -242,8 +231,13 @@ def calculate_energy_breakdown(mol, labels):
         ]:
             combination = np.array([key[1], *permuted_key])
             value = u.atoms[combination].improper.value()
-            energy = (calc_torsion_energy(value, parameter) / 3)
-            reordered = [permuted_key[0], key[1], permuted_key[1], permuted_key[2]]
+            energy = calc_torsion_energy(value, parameter) / 3
+            reordered = [
+                permuted_key[0],
+                key[1],
+                permuted_key[1],
+                permuted_key[2],
+            ]
             entry = {
                 "atom_1": reordered[0],
                 "atom_2": reordered[1],
@@ -262,10 +256,12 @@ def calculate_energy_breakdown(mol, labels):
                 "energy": energy.m_as(unit.kilocalories_per_mole),
             }
             all_entries.append(entry)
-        
+
     # electrostatics
     # 1-4s
-    indices_14s = [(key[0], key[-1]) for key in labels["ProperTorsions"].keys()]
+    indices_14s = [
+        (key[0], key[-1]) for key in labels["ProperTorsions"].keys()
+    ]
     distance_calculator = FUNCTIONS["Bonds"][1]
     for i, j in indices_14s:
         q1 = charges[i]
@@ -324,7 +320,7 @@ def calculate_energy_breakdown(mol, labels):
             continue
         if (i, j) in seen or (j, i) in seen:
             continue
-        
+
         q1 = charges[i]
         q2 = charges[j]
         distance = distance_calculator(u.atoms[[i, j]])
@@ -384,7 +380,7 @@ def calculate_energy_breakdown(mol, labels):
     "--output-directory",
     type=str,
     help="The directory to save the plots.",
-    default="../images"
+    default="../images",
 )
 @click.option(
     "--qm-dataset",
@@ -399,19 +395,20 @@ def calculate_energy_breakdown(mol, labels):
     type=str,
     help="The path to the MM dataset.",
     default="datasets/mm/singlepoint-torsiondrive-datasets",
-    required=False
+    required=False,
 )
 @click.option(
     "--geometry",
     type=click.Choice(["qm", "mm"]),
-    help="The geometry to use. `qm` for single points, `mm` for minimized geometries.",
-    default="qm"
+    help="The geometry to use. `qm` for single points,"
+    " `mm` for minimized geometries.",
+    default="qm",
 )
 @click.option(
     "--torsiondrive-id",
     type=int,
     help="The torsiondrive id to use.",
-    required=True
+    required=True,
 )
 def main(
     forcefield: str,
@@ -419,7 +416,7 @@ def main(
     torsiondrive_id: int,
     output_directory: str,
     mm_dataset_path: str = None,
-    geometry: typing.Literal["qm", "mm"] = "qm"
+    geometry: typing.Literal["qm", "mm"] = "qm",
 ):
     """
     Calculate the contribution of every single interaction
@@ -447,20 +444,21 @@ def main(
     │   │   │   │   │   ├── {parameter_id}_{atom_indices}.png
     ```
     """
-    import pyarrow.dataset as ds
     import pyarrow.compute as pc
+    import pyarrow.dataset as ds
+    import tqdm
     from openff.toolkit.topology import Molecule
     from openff.units import unit
-
-    import tqdm
 
     qm_dataset = ds.dataset(qm_dataset_path)
 
     if mm_dataset_path is not None:
         mm_dataset = ds.dataset(mm_dataset_path)
         if "forcefield" in mm_dataset.schema.names:
-            mm_dataset = mm_dataset.filter(pc.field("forcefield") == forcefield)
-    
+            mm_dataset = mm_dataset.filter(
+                pc.field("forcefield") == forcefield
+            )
+
     if geometry == "qm":
         coordinate_column = "conformer"
     elif geometry == "mm":
@@ -472,18 +470,19 @@ def main(
     expression = pc.field("torsiondrive_id") == torsiondrive_id
     qm_dataset = qm_dataset.filter(expression)
     columns = ["qcarchive_id", "grid_id", "mapped_smiles", "dihedral"]
+    print(qm_dataset.to_table(columns=columns).to_pandas())
     if geometry == "qm":
         columns.append("conformer")
     df = qm_dataset.to_table(columns=columns).to_pandas()
 
     if geometry == "mm":
-        mm_df = mm_dataset.to_table(
-            columns=["qcarchive_id", "mm_coordinates"]
-        )
+        mm_df = mm_dataset.to_table(columns=["qcarchive_id", "mm_coordinates"])
         mm_df = mm_df.to_pandas()
         df = df.merge(mm_df, on="qcarchive_id")
-    
+
     df = df.sort_values("grid_id")
+
+    print(df)
 
     # assign charges overall to ensure electrostatics are consistent
     mol = Molecule.from_mapped_smiles(
@@ -523,7 +522,7 @@ def main(
         df_["mapped_smiles"] = row.mapped_smiles
         df_["forcefield"] = forcefield
         all_dfs.append(df_)
-    
+
     all_dfs = pd.concat(all_dfs)
 
     output_directory = pathlib.Path(output_directory)
@@ -547,7 +546,7 @@ def main(
         for atom_indices, subsubdf in tqdm.tqdm(
             subdf.groupby("atom_indices"),
             total=len(subdf.atom_indices.unique()),
-            desc=f"Plotting {parameter_type} energy breakdowns"                      
+            desc=f"Plotting {parameter_type} energy breakdowns",
         ):
             plot_minimization_energies(
                 subsubdf,
@@ -558,7 +557,5 @@ def main(
             )
 
 
-
 if __name__ == "__main__":
     main()
-
